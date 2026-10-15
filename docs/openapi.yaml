@@ -3,1443 +3,408 @@ info:
   title: StreetHoops API
   version: 1.0.0
   description: |
-    REST API приложения **StreetHoops** — интерактивной карты уличных баскетбольных площадок.
-
-    Возможности:
-    * просмотр и фильтрация площадок (покрытие, освещение, платно/бесплатно, близость);
-    * отметки «Буду сегодня» / «Не смогу» с живым счётчиком ожидаемых игроков;
-    * рейтинг игроков на площадке (leaderboard);
-    * вкладка «Тренировки»: игрок создаёт профиль тренера, другие игроки оценивают тренера (1..5).
-
-    **Роли:** гость (без токена), `player`, `admin`.
+    API приложения StreetHoops: карта уличных баскетбольных площадок,
+    отметки «Буду сегодня» и вкладка «Тренировки» с рейтингом тренеров.
     Защищённые методы требуют заголовок `Authorization: Bearer <JWT>`.
-    Все запросы выполняются только по HTTPS.
-  contact:
-    name: Московский Д.Е., группа АА-25-07
 servers:
   - url: https://api.streethoops.example.com/v1
     description: Production
   - url: http://localhost:8000/v1
     description: Локальная разработка
 
-tags:
-  - name: Auth
-    description: Регистрация и вход
-  - name: Users
-    description: Профиль пользователя
-  - name: Courts
-    description: Баскетбольные площадки
-  - name: Check-ins
-    description: Отметки о присутствии на площадке
-  - name: Leaderboard
-    description: Рейтинг игроков площадки
-  - name: Trainers
-    description: Профили тренеров
-  - name: Trainer ratings
-    description: Оценки тренеров
-
 paths:
-  # ------------------------------------------------------------------ AUTH
   /auth/register:
     post:
       tags: [Auth]
-      summary: Регистрация нового игрока
-      description: Нужно указать email или телефон (или оба). Роль по умолчанию — `player`.
-      operationId: registerUser
+      summary: Регистрация игрока
       security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/UserCreate'
+            schema: { $ref: '#/components/schemas/UserCreate' }
       responses:
         '201':
           description: Пользователь создан
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/UserPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/UserPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /auth/login:
     post:
       tags: [Auth]
-      summary: Вход (получение JWT)
-      operationId: loginUser
+      summary: Вход, получение JWT
       security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
-          description: Успешная аутентификация
+          description: Успешный вход
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TokenResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
-  # ----------------------------------------------------------------- USERS
-  /users/me:
-    get:
-      tags: [Users]
-      summary: Получить свой профиль
-      operationId: getMe
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Профиль текущего пользователя
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserPublic'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    patch:
-      tags: [Users]
-      summary: Изменить свой профиль
-      operationId: updateMe
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserUpdate'
-      responses:
-        '200':
-          description: Профиль обновлён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /users/me/checkins:
-    get:
-      tags: [Users, Check-ins]
-      summary: Мои отметки на площадках
-      operationId: listMyCheckins
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: date
-          in: query
-          description: Фильтр по дате отметки
-          schema:
-            type: string
-            format: date
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200':
-          description: Список отметок пользователя
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CheckinList'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  # ---------------------------------------------------------------- COURTS
   /courts:
     get:
       tags: [Courts]
       summary: Список площадок с фильтрами
-      description: |
-        Публичный метод (доступен гостю). Гостям и игрокам возвращаются только площадки
-        со статусом модерации `approved`. Администратор может запросить любые статусы
-        через параметр `moderation_status`.
-      operationId: listCourts
       security: []
       parameters:
         - name: surface_type
           in: query
           description: Тип покрытия
-          schema:
-            $ref: '#/components/schemas/SurfaceType'
+          schema: { $ref: '#/components/schemas/SurfaceType' }
         - name: is_paid
           in: query
-          description: true — только платные, false — только бесплатные
-          schema:
-            type: boolean
+          description: true - платные, false - бесплатные
+          schema: { type: boolean }
         - name: has_lighting
           in: query
-          description: Наличие вечернего освещения
-          schema:
-            type: boolean
-        - name: lat
-          in: query
-          description: Широта центра поиска (используется вместе с lng и radius_m)
-          schema:
-            type: number
-            format: float
-            minimum: -90
-            maximum: 90
-        - name: lng
-          in: query
-          description: Долгота центра поиска
-          schema:
-            type: number
-            format: float
-            minimum: -180
-            maximum: 180
-        - name: radius_m
-          in: query
-          description: Радиус поиска в метрах
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 50000
-            default: 5000
-        - name: moderation_status
-          in: query
-          description: Только для admin
-          schema:
-            $ref: '#/components/schemas/ModerationStatus'
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+          schema: { type: boolean }
       responses:
         '200':
           description: Список площадок
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CourtList'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalError'
+                type: array
+                items: { $ref: '#/components/schemas/CourtPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       tags: [Courts]
-      summary: Предложить новую площадку
-      description: Площадка создаётся со статусом модерации `pending` и становится видна всем после одобрения администратором.
-      operationId: createCourt
+      summary: Добавить площадку (уходит на модерацию)
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CourtCreate'
+            schema: { $ref: '#/components/schemas/CourtCreate' }
       responses:
         '201':
-          description: Площадка создана и отправлена на модерацию
+          description: Площадка создана со статусом pending
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/CourtPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/CourtPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /courts/{courtId}:
-    parameters:
-      - $ref: '#/components/parameters/CourtId'
     get:
       tags: [Courts]
       summary: Карточка площадки
-      operationId: getCourt
-      security: []
-      responses:
-        '200':
-          description: Данные площадки и счётчик ожидаемых игроков на сегодня
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CourtPublic'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    patch:
-      tags: [Courts]
-      summary: Изменить данные площадки
-      description: Доступно автору площадки и администратору.
-      operationId: updateCourt
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CourtUpdate'
-      responses:
-        '200':
-          description: Площадка обновлена
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CourtPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    delete:
-      tags: [Courts]
-      summary: Удалить площадку (admin)
-      operationId: deleteCourt
-      security:
-        - bearerAuth: []
-      responses:
-        '204':
-          description: Площадка удалена
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /courts/{courtId}/photo:
-    parameters:
-      - $ref: '#/components/parameters/CourtId'
-    post:
-      tags: [Courts]
-      summary: Загрузить фото площадки
-      description: Форматы jpg/png, размер до 5 МБ. Доступно автору площадки и администратору.
-      operationId: uploadCourtPhoto
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PhotoUpload'
-      responses:
-        '200':
-          description: Фото сохранено, `photo_url` обновлён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CourtPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /courts/{courtId}/moderation:
-    parameters:
-      - $ref: '#/components/parameters/CourtId'
-    patch:
-      tags: [Courts]
-      summary: Изменить статус модерации площадки (admin)
-      operationId: moderateCourt
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ModerationUpdate'
-      responses:
-        '200':
-          description: Статус модерации обновлён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CourtPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  # -------------------------------------------------------------- CHECK-INS
-  /courts/{courtId}/checkins:
-    parameters:
-      - $ref: '#/components/parameters/CourtId'
-    get:
-      tags: [Check-ins]
-      summary: Сколько игроков ожидается на площадке
-      description: Считаются отметки со статусом «Буду сегодня» на указанную дату (по умолчанию — сегодня).
-      operationId: getCourtCheckinSummary
       security: []
       parameters:
-        - name: date
-          in: query
-          schema:
-            type: string
-            format: date
+        - $ref: '#/components/parameters/CourtId'
       responses:
         '200':
-          description: Сводка по отметкам
+          description: Данные площадки и счётчик ожидаемых игроков
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/CheckinSummary'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/CourtPublic' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /courts/{courtId}/checkins:
     post:
       tags: [Check-ins]
-      summary: Отметиться на площадке («Буду сегодня»)
-      description: Создаёт отметку со статусом «Буду сегодня». Одна отметка на пользователя, площадку и дату.
-      operationId: createCheckin
+      summary: Отметиться «Буду сегодня»
       security:
         - bearerAuth: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CheckinCreate'
+      parameters:
+        - $ref: '#/components/parameters/CourtId'
       responses:
         '201':
-          description: Отметка создана, счётчик на карточке увеличен на 1
+          description: Отметка создана, счётчик площадки увеличен на 1
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/CheckinPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/CheckinPublic' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /checkins/{checkinId}:
-    parameters:
-      - $ref: '#/components/parameters/CheckinId'
     patch:
       tags: [Check-ins]
-      summary: Изменить статус отметки («Не смогу» / «Буду сегодня»)
-      description: Только владелец отметки. При смене на «Не смогу» счётчик ожидаемых игроков уменьшается на 1.
-      operationId: updateCheckin
+      summary: Изменить статус отметки («Не смогу»)
       security:
         - bearerAuth: []
+      parameters:
+        - name: checkinId
+          in: path
+          required: true
+          schema: { type: integer }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/CheckinUpdate'
+            schema: { $ref: '#/components/schemas/CheckinUpdate' }
       responses:
         '200':
           description: Статус обновлён
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/CheckinPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/CheckinPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
-  # ------------------------------------------------------------ LEADERBOARD
-  /courts/{courtId}/leaderboard:
-    parameters:
-      - $ref: '#/components/parameters/CourtId'
-    get:
-      tags: [Leaderboard]
-      summary: Рейтинг игроков площадки
-      description: Игроки, отсортированные по количеству посещений (`rank` по возрастанию).
-      operationId: getCourtLeaderboard
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200':
-          description: Таблица лидеров площадки
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LeaderboardList'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  # --------------------------------------------------------------- TRAINERS
   /trainers:
     get:
       tags: [Trainers]
       summary: Список тренеров (вкладка «Тренировки»)
-      operationId: listTrainers
       security: []
       parameters:
         - name: specialization
           in: query
-          description: Поиск по специализации
-          schema:
-            type: string
+          schema: { type: string }
         - name: min_rating
           in: query
-          description: Минимальный средний рейтинг
-          schema:
-            type: number
-            minimum: 1
-            maximum: 5
-        - name: max_price
-          in: query
-          description: Максимальная цена за час
-          schema:
-            type: number
-            minimum: 0
-        - name: sort
-          in: query
-          schema:
-            type: string
-            enum: [rating_desc, price_asc, price_desc, experience_desc]
-            default: rating_desc
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
+          schema: { type: number, minimum: 1, maximum: 5 }
       responses:
         '200':
           description: Список активных тренеров
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrainerList'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          $ref: '#/components/responses/InternalError'
+                type: array
+                items: { $ref: '#/components/schemas/TrainerPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       tags: [Trainers]
       summary: Предложить услуги тренера (создать профиль)
-      description: У пользователя может быть только один профиль тренера.
-      operationId: createTrainer
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/TrainerCreate'
+            schema: { $ref: '#/components/schemas/TrainerCreate' }
       responses:
         '201':
           description: Профиль тренера создан
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/TrainerPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
-  /trainers/{trainerId}:
-    parameters:
-      - $ref: '#/components/parameters/TrainerId'
-    get:
-      tags: [Trainers]
-      summary: Профиль тренера
-      operationId: getTrainer
-      security: []
-      responses:
-        '200':
-          description: Профиль тренера со средним рейтингом
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerPublic'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    patch:
-      tags: [Trainers]
-      summary: Изменить профиль тренера
-      description: Доступно владельцу профиля и администратору. Через `is_active` услуги можно скрыть из списка.
-      operationId: updateTrainer
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TrainerUpdate'
-      responses:
-        '200':
-          description: Профиль обновлён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    delete:
-      tags: [Trainers]
-      summary: Удалить профиль тренера
-      description: Доступно владельцу профиля и администратору.
-      operationId: deleteTrainer
-      security:
-        - bearerAuth: []
-      responses:
-        '204':
-          description: Профиль удалён
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /trainers/{trainerId}/photo:
-    parameters:
-      - $ref: '#/components/parameters/TrainerId'
-    post:
-      tags: [Trainers]
-      summary: Загрузить фото тренера
-      description: Форматы jpg/png, размер до 5 МБ. Доступно владельцу профиля.
-      operationId: uploadTrainerPhoto
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PhotoUpload'
-      responses:
-        '200':
-          description: Фото сохранено
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  # ---------------------------------------------------------- TRAINER RATINGS
   /trainers/{trainerId}/ratings:
-    parameters:
-      - $ref: '#/components/parameters/TrainerId'
-    get:
-      tags: [Trainer ratings]
-      summary: Оценки и отзывы о тренере
-      operationId: listTrainerRatings
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200':
-          description: Список оценок
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerRatingList'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
     post:
-      tags: [Trainer ratings]
-      summary: Оценить тренера
-      description: |
-        Оценка от 1 до 5 с необязательным комментарием. Нельзя оценить самого себя (403).
-        Один пользователь — одна оценка на тренера (409); `average_rating` тренера пересчитывается.
-      operationId: createTrainerRating
+      tags: [Trainers]
+      summary: Оценить тренера (1-5)
+      description: Нельзя оценить себя (403) и оценить дважды (409).
       security:
         - bearerAuth: []
+      parameters:
+        - name: trainerId
+          in: path
+          required: true
+          schema: { type: integer }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/TrainerRatingCreate'
+            schema: { $ref: '#/components/schemas/TrainerRatingCreate' }
       responses:
         '201':
-          description: Оценка добавлена
+          description: Оценка добавлена, средний рейтинг пересчитан
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TrainerRatingPublic'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /trainers/{trainerId}/ratings/{ratingId}:
-    parameters:
-      - $ref: '#/components/parameters/TrainerId'
-      - $ref: '#/components/parameters/RatingId'
-    delete:
-      tags: [Trainer ratings]
-      summary: Удалить оценку
-      description: Доступно автору оценки и администратору. Средний рейтинг тренера пересчитывается.
-      operationId: deleteTrainerRating
-      security:
-        - bearerAuth: []
-      responses:
-        '204':
-          description: Оценка удалена
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+              schema: { $ref: '#/components/schemas/TrainerRatingPublic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
 components:
-  # ------------------------------------------------------------- SECURITY
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: 'JWT, полученный через POST /auth/login. Заголовок: `Authorization: Bearer <token>`'
 
-  # ------------------------------------------------------------ PARAMETERS
   parameters:
     CourtId:
       name: courtId
       in: path
       required: true
-      description: Идентификатор площадки (court_id)
-      schema:
-        type: integer
-        minimum: 1
-    TrainerId:
-      name: trainerId
-      in: path
-      required: true
-      description: Идентификатор профиля тренера (trainer_profile_id)
-      schema:
-        type: integer
-        minimum: 1
-    RatingId:
-      name: ratingId
-      in: path
-      required: true
-      description: Идентификатор оценки (rating_id)
-      schema:
-        type: integer
-        minimum: 1
-    CheckinId:
-      name: checkinId
-      in: path
-      required: true
-      description: Идентификатор отметки (checkin_id)
-      schema:
-        type: integer
-        minimum: 1
-    Page:
-      name: page
-      in: query
-      description: Номер страницы
-      schema:
-        type: integer
-        minimum: 1
-        default: 1
-    Limit:
-      name: limit
-      in: query
-      description: Размер страницы
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
+      description: Идентификатор площадки
+      schema: { type: integer, minimum: 1 }
 
-  # ------------------------------------------------------------- RESPONSES
   responses:
     BadRequest:
-      description: Некорректный запрос (ошибка валидации)
+      description: Ошибка валидации
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: validation_error
-            message: Поле score должно быть от 1 до 5
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
-      description: Не авторизован (нет токена, токен недействителен или неверные учётные данные)
+      description: Не авторизован (нет или неверный токен)
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: unauthorized
-            message: Требуется авторизация
+          schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
-      description: Недостаточно прав для действия
+      description: Недостаточно прав
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: forbidden
-            message: Недостаточно прав
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Ресурс не найден
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: not_found
-            message: Ресурс не найден
+          schema: { $ref: '#/components/schemas/Error' }
     Conflict:
-      description: Конфликт данных (дубликат)
+      description: Дубликат записи
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: conflict
-            message: Такая запись уже существует
-    InternalError:
-      description: Внутренняя ошибка сервера
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: internal_error
-            message: Внутренняя ошибка сервера
+          schema: { $ref: '#/components/schemas/Error' }
 
-  # --------------------------------------------------------------- SCHEMAS
   schemas:
     Error:
       type: object
       required: [code, message]
       properties:
-        code:
-          type: string
-          example: validation_error
-        message:
-          type: string
-          example: Описание ошибки
+        code: { type: string, example: validation_error }
+        message: { type: string, example: Поле score должно быть от 1 до 5 }
 
-    PageMeta:
-      type: object
-      required: [total, page, limit]
-      properties:
-        total:
-          type: integer
-          example: 57
-        page:
-          type: integer
-          example: 1
-        limit:
-          type: integer
-          example: 20
+    SurfaceType:
+      type: string
+      enum: [asphalt, rubber, parquet]
 
     # ---- User
-    UserRole:
-      type: string
-      enum: [player, admin]
-
     UserCreate:
       type: object
-      description: Данные для регистрации. Обязателен хотя бы один из email или phone.
+      description: Регистрация. Нужен email или телефон.
       required: [name, password]
       anyOf:
         - required: [email]
         - required: [phone]
       properties:
-        name:
-          type: string
-          minLength: 2
-          maxLength: 100
-          example: Дмитрий
-        email:
-          type: string
-          format: email
-          example: dmitry@example.com
-        phone:
-          type: string
-          pattern: '^\+?[0-9]{10,15}$'
-          example: '+79991234567'
-        password:
-          type: string
-          format: password
-          minLength: 8
-          maxLength: 128
-          writeOnly: true
-          example: StrongPass123
-
-    UserUpdate:
-      type: object
-      properties:
-        name:
-          type: string
-          minLength: 2
-          maxLength: 100
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-          pattern: '^\+?[0-9]{10,15}$'
-        password:
-          type: string
-          format: password
-          minLength: 8
-          maxLength: 128
-          writeOnly: true
+        name: { type: string, minLength: 2, example: Дмитрий }
+        email: { type: string, format: email }
+        phone: { type: string, example: '+79991234567' }
+        password: { type: string, format: password, minLength: 8, writeOnly: true }
 
     UserPublic:
       type: object
-      description: Публичные данные пользователя (без пароля и его хеша)
-      required: [user_id, name, role, registration_date]
+      description: Данные пользователя без пароля
+      required: [user_id, name, role]
       properties:
-        user_id:
-          type: integer
-          readOnly: true
-          example: 1
-        name:
-          type: string
-          example: Дмитрий
-        email:
-          type: string
-          format: email
-          nullable: true
-          example: dmitry@example.com
-        phone:
-          type: string
-          nullable: true
-          example: '+79991234567'
-        role:
-          $ref: '#/components/schemas/UserRole'
-        registration_date:
-          type: string
-          format: date-time
-          readOnly: true
+        user_id: { type: integer, readOnly: true }
+        name: { type: string }
+        email: { type: string, format: email, nullable: true }
+        phone: { type: string, nullable: true }
+        role: { type: string, enum: [player, admin] }
+        registration_date: { type: string, format: date-time, readOnly: true }
 
     LoginRequest:
       type: object
-      description: Вход по email или телефону (значение передаётся в поле login).
       required: [login, password]
       properties:
-        login:
-          type: string
-          description: Email или телефон
-          example: dmitry@example.com
-        password:
-          type: string
-          format: password
-          writeOnly: true
-          example: StrongPass123
+        login: { type: string, description: Email или телефон }
+        password: { type: string, format: password, writeOnly: true }
 
     TokenResponse:
       type: object
-      required: [access_token, token_type, expires_in, user]
+      required: [access_token, token_type]
       properties:
-        access_token:
-          type: string
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        token_type:
-          type: string
-          example: Bearer
-        expires_in:
-          type: integer
-          description: Время жизни токена в секундах
-          example: 3600
-        user:
-          $ref: '#/components/schemas/UserPublic'
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
 
     # ---- Court
-    SurfaceType:
-      type: string
-      enum: [asphalt, rubber, parquet]
-      description: Тип покрытия
-
-    ModerationStatus:
-      type: string
-      enum: [pending, approved, rejected]
-
     CourtCreate:
       type: object
       required: [address, latitude, longitude, surface_type, has_lighting, is_paid]
       properties:
-        address:
-          type: string
-          maxLength: 255
-          example: Москва, ул. Профсоюзная, 12
-        latitude:
-          type: number
-          format: float
-          minimum: -90
-          maximum: 90
-          example: 55.6741
-        longitude:
-          type: number
-          format: float
-          minimum: -180
-          maximum: 180
-          example: 37.5632
-        surface_type:
-          $ref: '#/components/schemas/SurfaceType'
-        has_lighting:
-          type: boolean
-        is_paid:
-          type: boolean
-
-    CourtUpdate:
-      type: object
-      properties:
-        address:
-          type: string
-          maxLength: 255
-        latitude:
-          type: number
-          format: float
-          minimum: -90
-          maximum: 90
-        longitude:
-          type: number
-          format: float
-          minimum: -180
-          maximum: 180
-        surface_type:
-          $ref: '#/components/schemas/SurfaceType'
-        has_lighting:
-          type: boolean
-        is_paid:
-          type: boolean
+        address: { type: string, example: 'Москва, ул. Профсоюзная, 12' }
+        latitude: { type: number, format: float, minimum: -90, maximum: 90 }
+        longitude: { type: number, format: float, minimum: -180, maximum: 180 }
+        surface_type: { $ref: '#/components/schemas/SurfaceType' }
+        has_lighting: { type: boolean }
+        is_paid: { type: boolean }
 
     CourtPublic:
-      type: object
-      required: [court_id, address, latitude, longitude, surface_type, has_lighting, is_paid, moderation_status]
-      properties:
-        court_id:
-          type: integer
-          readOnly: true
-          example: 15
-        address:
-          type: string
-          example: Москва, ул. Профсоюзная, 12
-        latitude:
-          type: number
-          format: float
-          example: 55.6741
-        longitude:
-          type: number
-          format: float
-          example: 37.5632
-        surface_type:
-          $ref: '#/components/schemas/SurfaceType'
-        has_lighting:
-          type: boolean
-        is_paid:
-          type: boolean
-        photo_url:
-          type: string
-          format: uri
-          nullable: true
-          example: https://cdn.streethoops.example.com/courts/15.jpg
-        moderation_status:
-          $ref: '#/components/schemas/ModerationStatus'
-        created_by:
-          type: integer
-          description: user_id автора площадки
-          example: 1
-        expected_players_today:
-          type: integer
-          readOnly: true
-          description: Вычисляемое поле — число отметок «Буду сегодня» на сегодня
-          example: 6
-
-    CourtList:
       allOf:
-        - $ref: '#/components/schemas/PageMeta'
+        - $ref: '#/components/schemas/CourtCreate'
         - type: object
-          required: [items]
+          required: [court_id, moderation_status]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/CourtPublic'
-
-    ModerationUpdate:
-      type: object
-      required: [moderation_status]
-      properties:
-        moderation_status:
-          $ref: '#/components/schemas/ModerationStatus'
-
-    PhotoUpload:
-      type: object
-      required: [file]
-      properties:
-        file:
-          type: string
-          format: binary
-          description: Изображение jpg/png, до 5 МБ
+            court_id: { type: integer, readOnly: true }
+            photo_url: { type: string, format: uri, nullable: true }
+            moderation_status: { type: string, enum: [pending, approved, rejected] }
+            expected_players_today:
+              type: integer
+              readOnly: true
+              description: Число отметок «Буду сегодня» на сегодня
 
     # ---- Check-in
-    CheckinStatus:
-      type: string
-      enum: ["Буду сегодня", "Не смогу"]
-
-    CheckinCreate:
-      type: object
-      properties:
-        checkin_date:
-          type: string
-          format: date
-          description: Дата визита (по умолчанию — сегодня)
-
     CheckinUpdate:
       type: object
       required: [status]
       properties:
-        status:
-          $ref: '#/components/schemas/CheckinStatus'
+        status: { type: string, enum: ['Буду сегодня', 'Не смогу'] }
 
     CheckinPublic:
       type: object
-      required: [checkin_id, user_id, court_id, status, checkin_date, created_at]
+      required: [checkin_id, user_id, court_id, status, checkin_date]
       properties:
-        checkin_id:
-          type: integer
-          readOnly: true
-          example: 101
-        user_id:
-          type: integer
-          example: 1
-        court_id:
-          type: integer
-          example: 15
-        status:
-          $ref: '#/components/schemas/CheckinStatus'
-        checkin_date:
-          type: string
-          format: date
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-
-    CheckinList:
-      allOf:
-        - $ref: '#/components/schemas/PageMeta'
-        - type: object
-          required: [items]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/CheckinPublic'
-
-    CheckinSummary:
-      type: object
-      required: [court_id, checkin_date, expected_players]
-      properties:
-        court_id:
-          type: integer
-          example: 15
-        checkin_date:
-          type: string
-          format: date
-        expected_players:
-          type: integer
-          description: Число отметок «Буду сегодня» на дату
-          example: 6
-
-    # ---- Leaderboard
-    LeaderboardEntry:
-      type: object
-      required: [leaderboard_id, court_id, user_id, visits_count, rank, updated_at]
-      properties:
-        leaderboard_id:
-          type: integer
-          readOnly: true
-        court_id:
-          type: integer
-        user_id:
-          type: integer
-        user_name:
-          type: string
-          description: Имя игрока (для отображения)
-          example: Дмитрий
-        visits_count:
-          type: integer
-          minimum: 0
-          example: 24
-        rank:
-          type: integer
-          minimum: 1
-          example: 1
-        updated_at:
-          type: string
-          format: date-time
-
-    LeaderboardList:
-      allOf:
-        - $ref: '#/components/schemas/PageMeta'
-        - type: object
-          required: [items]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/LeaderboardEntry'
+        checkin_id: { type: integer, readOnly: true }
+        user_id: { type: integer }
+        court_id: { type: integer }
+        status: { type: string, enum: ['Буду сегодня', 'Не смогу'] }
+        checkin_date: { type: string, format: date }
 
     # ---- Trainer
     TrainerCreate:
       type: object
       required: [display_name, specialization, experience_years, price_per_hour, contact_info]
       properties:
-        display_name:
-          type: string
-          maxLength: 100
-          example: Алексей Смирнов
-        about:
-          type: string
-          example: Играл за любительскую лигу, работаю с новичками и подростками.
-        specialization:
-          type: string
-          maxLength: 100
-          example: Бросок и работа с мячом
-        experience_years:
-          type: integer
-          minimum: 0
-          example: 5
-        price_per_hour:
-          type: number
-          format: decimal
-          minimum: 0
-          example: 1500
-        contact_info:
-          type: string
-          maxLength: 255
-          example: '@alex_coach'
-        photo_url:
-          type: string
-          format: uri
-          nullable: true
-
-    TrainerUpdate:
-      type: object
-      properties:
-        display_name:
-          type: string
-          maxLength: 100
-        about:
-          type: string
-        specialization:
-          type: string
-          maxLength: 100
-        experience_years:
-          type: integer
-          minimum: 0
-        price_per_hour:
-          type: number
-          format: decimal
-          minimum: 0
-        contact_info:
-          type: string
-          maxLength: 255
-        photo_url:
-          type: string
-          format: uri
-          nullable: true
-        is_active:
-          type: boolean
+        display_name: { type: string, example: Алексей Смирнов }
+        about: { type: string }
+        specialization: { type: string, example: Бросок и работа с мячом }
+        experience_years: { type: integer, minimum: 0 }
+        price_per_hour: { type: number, minimum: 0, example: 1500 }
+        contact_info: { type: string, example: '@alex_coach' }
 
     TrainerPublic:
-      type: object
-      required: [trainer_profile_id, user_id, display_name, specialization, experience_years, price_per_hour, contact_info, is_active]
-      properties:
-        trainer_profile_id:
-          type: integer
-          readOnly: true
-          example: 7
-        user_id:
-          type: integer
-          example: 3
-        display_name:
-          type: string
-        about:
-          type: string
-          nullable: true
-        specialization:
-          type: string
-        experience_years:
-          type: integer
-        price_per_hour:
-          type: number
-          format: decimal
-        contact_info:
-          type: string
-        photo_url:
-          type: string
-          format: uri
-          nullable: true
-        is_active:
-          type: boolean
-        average_rating:
-          type: number
-          format: decimal
-          nullable: true
-          readOnly: true
-          minimum: 1
-          maximum: 5
-          description: Вычисляемое поле (среднее по оценкам), null если оценок ещё нет
-          example: 4.7
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-
-    TrainerList:
       allOf:
-        - $ref: '#/components/schemas/PageMeta'
+        - $ref: '#/components/schemas/TrainerCreate'
         - type: object
-          required: [items]
+          required: [trainer_profile_id, user_id, is_active]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/TrainerPublic'
+            trainer_profile_id: { type: integer, readOnly: true }
+            user_id: { type: integer }
+            is_active: { type: boolean }
+            average_rating:
+              type: number
+              nullable: true
+              readOnly: true
+              description: Средняя оценка (1-5), null если оценок нет
 
     # ---- Trainer rating
     TrainerRatingCreate:
       type: object
       required: [score]
       properties:
-        score:
-          type: integer
-          minimum: 1
-          maximum: 5
-          example: 5
-        comment:
-          type: string
-          maxLength: 1000
-          example: Отличная тренировка, бросок стал стабильнее
+        score: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 1000 }
 
     TrainerRatingPublic:
-      type: object
-      required: [rating_id, trainer_profile_id, user_id, score, created_at]
-      properties:
-        rating_id:
-          type: integer
-          readOnly: true
-          example: 12
-        trainer_profile_id:
-          type: integer
-          example: 7
-        user_id:
-          type: integer
-          description: Автор оценки
-          example: 1
-        score:
-          type: integer
-          minimum: 1
-          maximum: 5
-        comment:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
-
-    TrainerRatingList:
       allOf:
-        - $ref: '#/components/schemas/PageMeta'
+        - $ref: '#/components/schemas/TrainerRatingCreate'
         - type: object
-          required: [items]
+          required: [rating_id, trainer_profile_id, user_id]
           properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/TrainerRatingPublic'
+            rating_id: { type: integer, readOnly: true }
+            trainer_profile_id: { type: integer }
+            user_id: { type: integer }
+            created_at: { type: string, format: date-time, readOnly: true }
